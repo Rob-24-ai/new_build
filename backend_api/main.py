@@ -6,6 +6,7 @@ from pydantic import BaseModel, HttpUrl
 from PIL import Image
 import google.generativeai as genai
 from dotenv import load_dotenv
+import datetime
 
 # Load environment variables (for local development)
 load_dotenv()
@@ -40,34 +41,41 @@ class ImageAnalysisRequest(BaseModel):
 # Create a minimal FastAPI application
 app = FastAPI()
 
-# Define a simple route for the root URL with debug info
+# Define a simple route for the root URL with enhanced debug info
 @app.get("/")
 async def read_root():
-    # Get all available environment variables (masking sensitive info)
-    env_vars = {}
-    for key in os.environ:
-        if "key" in key.lower() or "secret" in key.lower() or "password" in key.lower():
-            # Mask sensitive values
-            value = "[MASKED]" if os.environ.get(key) else "None"
-        else:
-            value = os.environ.get(key) or "None"
-        env_vars[key] = value
-        
-    # Look for variants of the Google API key name
-    api_key_variants = {
-        "GOOGLE_API_KEY": os.getenv("GOOGLE_API_KEY", "Not found") != "Not found",
-        "GOOGLE_APIKEY": os.getenv("GOOGLE_APIKEY", "Not found") != "Not found",
-        "GOOGLEAPI_KEY": os.getenv("GOOGLEAPI_KEY", "Not found") != "Not found",
-        "GOOGLE_API_SECRET": os.getenv("GOOGLE_API_SECRET", "Not found") != "Not found"
-    }
+    # Get all available environment variables
+    all_env_vars = dict(os.environ)
     
+    # Try to find the API key using various names
+    api_key_value = None
+    key_names_to_check = ["GOOGLE_API_KEY", "google_api_key", "GOOGLEAPI_KEY", "RAILWAY_SHARED_GOOGLE_API_KEY", "RAILWAY_GOOGLE_API_KEY"]
+    found_key_name = "None"
+    for name in key_names_to_check:
+        key_value = all_env_vars.get(name)
+        if key_value:
+            api_key_value = key_value
+            found_key_name = name
+            break
+
+    api_key_configured_runtime = api_key_value is not None
+
     return {
-        "message": "Hello! Image Analysis API is running.",
-        "port": os.getenv("PORT", "8000"),
-        "api_key_configured": api_key is not None,
-        "api_key_env_check": api_key_variants,
-        "available_keys": [k for k in env_vars.keys() if "key" in k.lower()],
+        "message": "Hello! Image Analysis API running.",
+        "port": all_env_vars.get("PORT", "8000"),
+        "api_key_configured_at_startup": api_key is not None, # Checks if genai.configure() was called
+        "api_key_found_in_env_now": api_key_configured_runtime,
+        "api_key_variable_name_found": found_key_name,
+        "all_environment_keys": sorted(list(all_env_vars.keys())),
         "status": "ok"
+    }
+
+# Add a simple test endpoint that doesn't need the API key
+@app.get("/test-endpoint")
+async def test_endpoint():
+    return {
+        "message": "This is a simple test endpoint that works without the API key",
+        "timestamp": str(datetime.datetime.now())
     }
 
 # Minimal image analysis function
