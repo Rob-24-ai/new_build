@@ -78,6 +78,41 @@ async def test_endpoint():
         "timestamp": str(datetime.datetime.now())
     }
 
+# Simple endpoint to check environment variables in another way
+@app.get("/check-env/")
+def check_env():
+    # List of ways the API key might be available
+    possible_paths = [
+        "GOOGLE_API_KEY",
+        "google_api_key",
+        "GOOGLEAPI_KEY",
+        "RAILWAY_SHARED_GOOGLE_API_KEY",
+        "RAILWAY_GOOGLE_API_KEY"
+    ]
+    
+    # Check using os.environ.get directly
+    results = {}
+    for name in possible_paths:
+        value = os.environ.get(name)
+        results[name] = "[Found]" if value else "Not found"
+    
+    # Check if .env file has the key (for local development)
+    local_env_path = os.path.join(os.getcwd(), ".env")
+    has_env_file = os.path.exists(local_env_path)
+    
+    # System information
+    system_info = {
+        "cwd": os.getcwd(),
+        "has_env_file": has_env_file,
+        "env_var_count": len(os.environ)
+    }
+    
+    return {
+        "message": "Environment Variable Check",
+        "api_key_search_results": results,
+        "system_info": system_info
+    }
+
 # Minimal image analysis function
 async def analyze_image_with_gemini(image_bytes: bytes, prompt: str) -> str:
     """Minimal implementation to analyze an image using Gemini"""
