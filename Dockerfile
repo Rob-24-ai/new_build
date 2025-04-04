@@ -13,5 +13,5 @@ WORKDIR /app/backend_api
 # Expose the port
 EXPOSE 8000
 
-# Command to run the application (uvicorn should be run from the directory containing main.py)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "${PORT:-8000}"]
+# Command to run the application using shell form to allow environment variable substitution
+CMD uvicorn main:app --host 0.0.0.0 --port $PORT
