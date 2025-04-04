@@ -10,13 +10,26 @@ from dotenv import load_dotenv
 # Load environment variables (for local development)
 load_dotenv()
 
-# Configure the Google AI client with minimal setup
-api_key = os.getenv("GOOGLE_API_KEY")
+# Configure the Google AI client with minimal setup - try multiple possible env var names
+def get_api_key():
+    # Try to get the API key with different possible names
+    key_names = ["GOOGLE_API_KEY", "google_api_key", "GOOGLEAPI_KEY", "RAILWAY_SHARED_GOOGLE_API_KEY"]
+    
+    for name in key_names:
+        key = os.getenv(name)
+        if key:
+            print(f"Found API key using environment variable: {name}")
+            return key
+    
+    return None
+
+api_key = get_api_key()
+
 if api_key:
     genai.configure(api_key=api_key)
     print("Google Gemini API configured successfully")
 else:
-    print("Warning: GOOGLE_API_KEY not found in environment variables")
+    print("Warning: Could not find Google API Key in any expected environment variables")
 
 # Define request body model for the analysis endpoint
 class ImageAnalysisRequest(BaseModel):
