@@ -21,6 +21,8 @@ genai.configure(api_key=api_key)
 # --- Define request body model for the analysis endpoint ---
 class ImageAnalysisRequest(BaseModel):
     image_url: HttpUrl # Use HttpUrl for basic URL validation
+    user_id: str # User ID to track conversation context
+    prompt: str = "Describe this image in detail" # Default prompt if none provided
 
 # Create an instance of the FastAPI class
 app = FastAPI()
@@ -76,7 +78,9 @@ async def read_root():
 async def analyze_image_endpoint(request: ImageAnalysisRequest):
     """Receives an image URL, fetches it, and analyzes it using Gemini."""
     the_url = str(request.image_url) # Get URL from request body
-    print(f"Received request to analyze image URL: {the_url}")
+    user_id = request.user_id # Get user ID for tracking
+    prompt = request.prompt # Get analysis prompt
+    print(f"Received request from user {user_id} to analyze image URL: {the_url}")
 
     try:
         # 1. Fetch the image from the URL
@@ -95,13 +99,13 @@ async def analyze_image_endpoint(request: ImageAnalysisRequest):
         print(f"Successfully fetched image from URL ({len(image_bytes)} bytes).")
 
         # 2. Call the Gemini analysis function
-        analysis_prompt = "Tell me what you see in this image." # As requested
-        analysis_result_text = await analyze_image_with_gemini(image_bytes, analysis_prompt)
+        analysis_result_text = await analyze_image_with_gemini(image_bytes, prompt)
 
         # 3. Return the results dictionary
         print(f"Analysis complete. Returning results.")
         return {
             "status": "success",
+            "user_id": user_id,
             "input_url": the_url,
             "analysis": {
                 "description": analysis_result_text
