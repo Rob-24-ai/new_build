@@ -27,13 +27,33 @@ class ImageAnalysisRequest(BaseModel):
 # Create a minimal FastAPI application
 app = FastAPI()
 
-# Define a simple route for the root URL
+# Define a simple route for the root URL with debug info
 @app.get("/")
 async def read_root():
+    # Get all available environment variables (masking sensitive info)
+    env_vars = {}
+    for key in os.environ:
+        if "key" in key.lower() or "secret" in key.lower() or "password" in key.lower():
+            # Mask sensitive values
+            value = "[MASKED]" if os.environ.get(key) else "None"
+        else:
+            value = os.environ.get(key) or "None"
+        env_vars[key] = value
+        
+    # Look for variants of the Google API key name
+    api_key_variants = {
+        "GOOGLE_API_KEY": os.getenv("GOOGLE_API_KEY", "Not found") != "Not found",
+        "GOOGLE_APIKEY": os.getenv("GOOGLE_APIKEY", "Not found") != "Not found",
+        "GOOGLEAPI_KEY": os.getenv("GOOGLEAPI_KEY", "Not found") != "Not found",
+        "GOOGLE_API_SECRET": os.getenv("GOOGLE_API_SECRET", "Not found") != "Not found"
+    }
+    
     return {
         "message": "Hello! Image Analysis API is running.",
         "port": os.getenv("PORT", "8000"),
         "api_key_configured": api_key is not None,
+        "api_key_env_check": api_key_variants,
+        "available_keys": [k for k in env_vars.keys() if "key" in k.lower()],
         "status": "ok"
     }
 
