@@ -13,5 +13,5 @@ WORKDIR /app/backend_api
 # Expose the port
 EXPOSE 8000
 
-# Command to run the application using shell form to allow environment variable substitution
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+# Command to run the application using Python to handle PORT env var reliably
+CMD ["python", "-c", "import os; from uvicorn import run; port = int(os.environ.get('PORT', 8000)); run('main:app', host='0.0.0.0', port=port)"]
