@@ -12,5 +12,5 @@ COPY backend_api/main.py /app/main.py
 # Expose the port the app runs on
 EXPOSE 8000
 
-# Command to run the application directly
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Command to run the application using Railway's PORT variable
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
