@@ -120,26 +120,68 @@ connectButton.onclick = () => {
         console.log('Message received from server:', event.data);
         if (typeof event.data === 'string') {
             try {
-                const message = JSON.parse(event.data);
+                const messageData = JSON.parse(event.data);
                 
-                if (message.type === 'transcription') {
+                if (messageData.type === 'transcription') {
                     // User's transcribed speech
-                    console.log('Transcription:', message.text);
-                    displayTranscription('You: ' + message.text);
+                    console.log('Transcription:', messageData.text);
+                    displayTranscription('You: ' + messageData.text);
                 } 
-                else if (message.type === 'ai_response') {
+                else if (messageData.type === 'ai_response') {
                     // AI's response
-                    console.log('AI Response:', message.text);
-                    displayAIResponse('ArtSensei: ' + message.text);
+                    console.log('AI Response:', messageData.text);
+                    displayAIResponse('ArtSensei: ' + messageData.text);
+                } 
+                else if (messageData.type === 'ai_audio') {
+                    // Handle incoming audio data
+                    console.log("Received AI audio data.");
+                    try {
+                        // Decode Base64 string to binary data
+                        const audioBytes = Uint8Array.from(atob(messageData.audio_base64), c => c.charCodeAt(0));
+                        // Create a Blob from the bytes (assuming mp3 audio, adjust MIME type if necessary)
+                        const audioBlob = new Blob([audioBytes], { type: 'audio/mpeg' });
+                        // Create an object URL for the Blob
+                        const audioUrl = URL.createObjectURL(audioBlob);
+                        
+                        // Stop any currently playing audio before starting new audio
+                        if (window.currentAudio) {
+                            console.log("Stopping previous audio...");
+                            window.currentAudio.pause();
+                            window.currentAudio.onended = null; // Remove previous event listener
+                            URL.revokeObjectURL(window.currentAudio.src); // Clean up previous URL
+                        }
+                        
+                        // Create an Audio object and play it
+                        const audio = new Audio(audioUrl);
+                        window.currentAudio = audio; // Store reference to current audio
+                        
+                        console.log("Playing AI audio...");
+                        audio.play();
+                        
+                        // Optional: Revoke the object URL after playback finishes to free memory
+                        audio.onended = () => {
+                            URL.revokeObjectURL(audioUrl);
+                            console.log("AI audio finished playing and URL revoked.");
+                            window.currentAudio = null;
+                        };
+                        audio.onerror = (e) => {
+                            console.error("Error playing audio:", e);
+                            URL.revokeObjectURL(audioUrl); // Clean up URL on error too
+                            window.currentAudio = null;
+                        };
+
+                    } catch (error) {
+                        console.error("Error processing or playing AI audio:", error);
+                    }
                 }
-                else if (message.type === 'error') {
-                    console.error('Error from server:', message.text);
-                    displayError('Error: ' + message.text);
+                else if (messageData.type === 'error') {
+                    console.error('Error from server:', messageData.text);
+                    displayError('Error: ' + messageData.text);
                 }
-                else if (message.type === 'command') {
+                else if (messageData.type === 'command') {
                     // Handle server commands
-                    console.log('Command from server:', message.action);
-                    if (message.action === 'enable_analyze_button') {
+                    console.log('Command from server:', messageData.action);
+                    if (messageData.action === 'enable_analyze_button') {
                         analyzeImageBtn.disabled = false;
                         
                         // Ensure recording status is maintained after image analysis

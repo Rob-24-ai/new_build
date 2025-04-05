@@ -78,7 +78,7 @@ def analyze_image_from_data_url(data_url: str) -> str:
         }
         
         # Create a prompt asking for art analysis
-        prompt = "Analyze this artwork. Describe the style, techniques used, possible period, and artistic elements you observe."
+        prompt = "Analyze this artwork in one sentence."
         
         # Send to Gemini
         contents = [prompt, image_part]

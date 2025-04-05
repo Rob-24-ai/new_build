@@ -2,10 +2,14 @@ import asyncio
 import json
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+import base64
+from dotenv import load_dotenv
+load_dotenv()
 
 from .gemini_integration import analyze_text_with_gemini, analyze_image_and_text_with_gemini, analyze_image_from_data_url
 from .deepgram_client import DeepgramConnection
 from .conversation_context import ConversationContext
+from .elevenlabs_tts import text_to_speech_elevenlabs
 
 app = FastAPI()
 
@@ -105,8 +109,29 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Add AI response to conversation context
                     conversation.add_ai_response(ai_response)
                     
-                    # Send AI response back to client
+                    # Send AI response (text) back to client for captions
                     await websocket.send_text(json.dumps({"type": "ai_response", "text": ai_response}))
+
+                    # --- Generate and send AI audio response --- 
+                    try:
+                        print("Attempting to generate TTS audio...")
+                        audio_bytes = await text_to_speech_elevenlabs(ai_response)
+                        if audio_bytes:
+                            print(f"TTS audio generated ({len(audio_bytes)} bytes). Encoding and sending...")
+                            # Encode audio bytes to Base64 string for JSON transport
+                            audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                            # Send audio data to client
+                            await websocket.send_text(json.dumps({
+                                "type": "ai_audio", 
+                                "audio_base64": audio_base64
+                            }))
+                            print("AI audio sent to client.")
+                        else:
+                            print("TTS generation failed or returned empty audio.")
+                    except Exception as tts_error:
+                        print(f"Error during TTS generation or sending: {tts_error}")
+                    # --- End TTS section ---
+
                 except Exception as e:
                     print(f"Error generating AI response: {e}")
                     await websocket.send_text(json.dumps({"type": "error", "text": "Error generating AI response"}))
@@ -154,24 +179,36 @@ async def websocket_endpoint(websocket: WebSocket):
                             
                             # Process the image with Gemini API using our new function
                             analysis_result = analyze_image_from_data_url(data_url)
-                            
-                            # Add the AI response to conversation context
+                            print(f"Image analysis result: {analysis_result[:100]}...")
+
+                            # Add AI response to conversation context
                             conversation.add_ai_response(analysis_result)
-                            
-                            # Send analysis back to client
-                            await websocket.send_text(json.dumps({
-                                "type": "ai_response",
-                                "text": f"Analysis of your image: {analysis_result}"
-                            }))
-                            
-                            # Re-enable the analyze button on the client side
-                            await websocket.send_text(json.dumps({
-                                "type": "command",
-                                "action": "enable_analyze_button"
-                            }))
-                            
+
+                            # Send analysis result (text) back to client for captions
+                            await websocket.send_text(json.dumps({"type": "ai_response", "text": analysis_result}))
+
+                            # --- Generate and send AI audio response for image analysis ---
+                            try:
+                                print("Attempting to generate TTS audio for image analysis...")
+                                audio_bytes = await text_to_speech_elevenlabs(analysis_result)
+                                if audio_bytes:
+                                    print(f"TTS audio generated ({len(audio_bytes)} bytes). Encoding and sending...")
+                                    # Encode audio bytes to Base64 string for JSON transport
+                                    audio_base64 = base64.b64encode(audio_bytes).decode('utf-8')
+                                    # Send audio data to client
+                                    await websocket.send_text(json.dumps({
+                                        "type": "ai_audio",
+                                        "audio_base64": audio_base64
+                                    }))
+                                    print("AI audio for image analysis sent to client.")
+                                else:
+                                    print("TTS generation failed or returned empty audio for image analysis.")
+                            except Exception as tts_error:
+                                print(f"Error during TTS generation or sending for image analysis: {tts_error}")
+                            # --- End TTS section for image analysis ---
+
                         except Exception as e:
-                            print(f"Error analyzing image: {e}")
+                            print(f"Error processing image analysis request: {e}")
                             await websocket.send_text(json.dumps({
                                 "type": "error",
                                 "text": f"Error analyzing image: {str(e)}"
