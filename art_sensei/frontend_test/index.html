@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Audio Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        button { padding: 10px; margin: 5px; }
+        #status { margin-top: 15px; font-weight: bold; }
+        #transcript { margin-top: 15px; border: 1px solid #ccc; padding: 10px; min-height: 50px; background-color: #f9f9f9; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Audio Test</h1>
+
+    <button id="connectButton">Connect</button>
+    <button id="disconnectButton" disabled>Disconnect</button>
+    <button id="startButton" disabled>Start Recording</button>
+    <button id="stopButton" disabled>Stop Recording</button>
+    
+    <div id="imageSection" style="margin-top: 20px; border-top: 1px solid #ccc; padding-top: 10px;">
+        <h3>Image Analysis</h3>
+        <input type="file" id="imageUpload" accept="image/*" disabled>
+        <button id="analyzeImageBtn" disabled>Submit</button>
+        <div id="imagePreview" style="margin-top: 10px; max-width: 300px;"></div>
+    </div>
+
+    <h2>Status</h2>
+    <div id="status">Status: Not Connected</div>
+
+    <h2>Transcription:</h2>
+    <div id="transcription" style="height: 200px; overflow-y: scroll; border: 1px solid #ccc; padding: 5px; margin-bottom: 10px;"></div>
+
+    <div id="transcript">Transcript:</div>
+
+    <script src="app.js"></script>
+</body>
+</html>

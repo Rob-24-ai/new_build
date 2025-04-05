@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+google-generativeai
+python-dotenv
+pydantic-settings
+requests
+deepgram-sdk>=3.0
+certifi
