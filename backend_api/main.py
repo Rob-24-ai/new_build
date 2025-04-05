@@ -2,6 +2,7 @@ import os
 import io
 import base64
 import json
+import copy
 import logging
 from typing import Dict, Any, Optional, List, Union
 
@@ -24,17 +25,11 @@ logger = logging.getLogger("artsensei-api")
 load_dotenv()
 
 # Environment configuration with defaults
-PREDICTION_API_BASE_URL = os.getenv("ARTSENSEI_API_BASE_URL", "https://talk.artsensei.ai")
-PREDICTION_ID = os.getenv("ARTSENSEI_PREDICTION_ID", "default")
-JWT_TOKEN = os.getenv("ARTSENSEI_JWT_TOKEN", "JWT")
-DEFAULT_TIMEOUT = int(os.getenv("API_REQUEST_TIMEOUT", "60"))
+# Direct integration with OpenAI API
+DEFAULT_TIMEOUT = int(os.getenv("API_REQUEST_TIMEOUT", "180"))
 
-# Validate required environment variables
-if PREDICTION_API_BASE_URL == "https://talk.artsensei.ai" and JWT_TOKEN == "JWT":
-    logger.warning(
-        "Using default placeholder values for ARTSENSEI_API_BASE_URL and ARTSENSEI_JWT_TOKEN. "
-        "These should be configured properly for production use."
-    )
+# Log the configuration
+logger.info(f"Using OpenAI API")
 
 # Model definitions
 class ImageUpload(BaseModel):
@@ -73,7 +68,7 @@ class AnalysisResponse(BaseModel):
 # Create FastAPI application
 app = FastAPI(
     title="ArtSensei Image Analysis API",
-    description="API for analyzing images using ArtSensei Prediction API",
+    description="API for analyzing images using OpenAI API",
     version="1.0.0"
 )
 
@@ -106,7 +101,7 @@ async def read_root():
     return {
         "message": "ArtSensei Image Analysis API",
         "version": "1.0.0",
-        "prediction_api": PREDICTION_API_BASE_URL,
+        "prediction_api": "https://api.openai.com",
         "status": "operational"
     }
 
@@ -124,12 +119,12 @@ async def analyze_image_with_prediction_api(
     user_id: str
 ) -> str:
     """
-    Analyze an image using the ArtSensei Prediction API
+    Analyze an image using the OpenAI API
     
     Args:
         image_bytes: The raw image bytes
         prompt: The text prompt to send with the image
-        user_id: User identifier for tracking
+        user_id: User identifier for tracking (not sent to OpenAI, but good for logs)
         
     Returns:
         The analysis result text
@@ -137,14 +132,35 @@ async def analyze_image_with_prediction_api(
     Raises:
         HTTPException: If there's an error processing the request
     """
+    # Load OpenAI API Key from environment variable
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        logger.error("OPENAI_API_KEY environment variable not set.")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server configuration error: OpenAI API Key missing."
+        )
+        
     try:
-        # Process the image
+        # --- Image Processing (Stays the same) --- 
         try:
             img = Image.open(io.BytesIO(image_bytes))
-            # Convert to PNG format
+            
+            max_dimension = 512 # Restore original intended resize
+            if max(img.width, img.height) > max_dimension:
+                if img.width > img.height:
+                    new_width = max_dimension
+                    new_height = int(img.height * (max_dimension / img.width))
+                else:
+                    new_height = max_dimension
+                    new_width = int(img.width * (max_dimension / img.height))
+                img = img.resize((new_width, new_height), Image.LANCZOS)
+                
             with io.BytesIO() as output:
-                img.save(output, format="PNG")
+                img.convert('RGB').save(output, format="JPEG", quality=80, optimize=True)
                 image_bytes = output.getvalue()
+            
+            logger.debug(f"Compressed image size: {len(image_bytes) / 1024:.2f} KB")
         except Exception as e:
             logger.error(f"Error processing image: {e}")
             raise HTTPException(
@@ -152,108 +168,118 @@ async def analyze_image_with_prediction_api(
                 detail="Invalid image format"
             )
         
-        # Convert to base64
         base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        # --- End Image Processing ---
         
-        # Create the prediction request
-        prediction_request = PredictionRequest(
-            question=prompt,
-            history=[
-                ConversationMessage(
-                    role="apiMessage",
-                    content="Hello, how can I help you?"
-                )
+        # Prepare the payload for OpenAI API
+        payload = {
+            "model": "gpt-4o", # Specify the model
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                # OpenAI expects jpeg format hint here
+                                "url": f"data:image/jpeg;base64,{base64_image}" 
+                            }
+                        }
+                    ]
+                }
             ],
-            uploads=[
-                ImageUpload(
-                    name="image.png",
-                    data=f"data:image/png;base64,{base64_image}",
-                    mime="image/png"
-                )
-            ]
-        )
+            "max_tokens": 1000 # Add max_tokens for the response
+        }
         
-        # Construct the API URL
-        prediction_api_url = f"{PREDICTION_API_BASE_URL}/prediction/{PREDICTION_ID}"
+        # OpenAI API endpoint
+        openai_api_url = "https://api.openai.com/v1/chat/completions"
         
-        # Headers for authentication
+        # Headers including the OpenAI API Key
         headers = {
-            "Authorization": f"Bearer {JWT_TOKEN}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {openai_api_key}" 
         }
         
         # Log the request (excluding the actual image data for size reasons)
-        redacted_request = prediction_request.dict()
-        redacted_request["uploads"][0]["data"] = "[BASE64_IMAGE_DATA_REDACTED]"
-        logger.info(f"Sending request to {prediction_api_url} with prompt: {prompt}")
-        logger.debug(f"Request payload: {json.dumps(redacted_request)}")
+        redacted_payload = copy.deepcopy(payload)
+        if "messages" in redacted_payload and len(redacted_payload["messages"]) > 0:
+            for message in redacted_payload["messages"]:
+                if "content" in message and isinstance(message["content"], list):
+                    for content_item in message["content"]:
+                        if content_item.get("type") == "image_url":
+                            content_item["image_url"]["url"] = "[IMAGE_DATA_REDACTED]"
+        logger.info(f"Sending request to OpenAI API for user {user_id} with prompt: {prompt}")
+        logger.debug(f"Request payload (redacted): {json.dumps(redacted_payload)}")
         
         # Make the API request
         try:
             response = requests.post(
-                prediction_api_url,
+                openai_api_url,
                 headers=headers,
-                json=prediction_request.dict(),
+                json=payload,
                 timeout=DEFAULT_TIMEOUT
             )
-            response.raise_for_status()
+            response.raise_for_status() # Raises HTTPError for bad responses (4xx or 5xx)
+            
+            # Extract the response text
+            response_data = response.json()
+            analysis_result = response_data.get('choices', [{}])[0].get('message', {}).get('content', '')
+            
+            if not analysis_result:
+                 logger.error(f"OpenAI API returned empty content. Full response: {response_data}")
+                 raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="OpenAI API returned empty content."
+                 )
+            
+            logger.info(f"Received successful analysis from OpenAI for user {user_id}")
+            logger.debug(f"OpenAI Response: {analysis_result}")
+            return analysis_result
+            
         except requests.exceptions.Timeout:
-            logger.error(f"Timeout when connecting to prediction API")
+            logger.error(f"Timeout when connecting to OpenAI API")
             raise HTTPException(
                 status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-                detail="Prediction API request timed out"
+                detail="OpenAI API request timed out"
             )
         except requests.exceptions.ConnectionError:
-            logger.error(f"Could not connect to prediction API")
+            logger.error(f"Could not connect to OpenAI API")
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Could not connect to prediction API"
+                detail="Could not connect to OpenAI API"
             ) 
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error from prediction API: {e} - {response.text}")
+            # Log the detailed error response from OpenAI if available
+            error_details = "No details available."
+            try:
+                error_details = response.json()
+            except json.JSONDecodeError:
+                error_details = response.text
+            logger.error(f"HTTP error from OpenAI API: {e} - Response: {error_details}")
+            # Pass status code from OpenAI if possible, else default to 502
+            status_code = response.status_code if response else status.HTTP_502_BAD_GATEWAY
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Prediction API error: {response.status_code}"
+                status_code=status_code, # Use OpenAI's status code
+                detail=f"OpenAI API error: {error_details}" 
             )
-        
-        # Parse and return the prediction result
-        try:
-            result = response.json()
-        except json.JSONDecodeError:
-            logger.error(f"Invalid JSON response from prediction API: {response.text}")
+        except Exception as e:
+            logger.exception(f"An unexpected error occurred during OpenAI API call: {e}")
             raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail="Invalid response from prediction API"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"An unexpected error occurred: {e}"
             )
-        
-        # Log the response (for debugging)
-        logger.info(f"Received prediction API response")
-        logger.debug(f"Response: {json.dumps(result)}")
-        
-        # Extract the relevant part of the result
-        # This will need to be adjusted based on the actual response format
-        if isinstance(result, dict):
-            if "content" in result:
-                description = result["content"]
-            elif "text" in result:
-                description = result["text"]
-            elif "message" in result and "content" in result["message"]:
-                description = result["message"]["content"]
-            else:
-                # Fallback with full result
-                description = str(result)
-        else:
-            description = str(result)
-        
-        return description
-    except HTTPException:
-        # Re-raise HTTP exceptions without wrapping
-        raise
+
+    except HTTPException as http_exc: # Re-raise HTTPExceptions
+        raise http_exc
     except Exception as e:
-        logger.exception(f"Unexpected error during prediction API analysis: {e}")
+        logger.exception(f"Unexpected error in analyze_image_with_prediction_api: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An unexpected error occurred during image analysis"
+            detail=f"An unexpected server error occurred."
         )
 
 @app.post(
@@ -263,7 +289,7 @@ async def analyze_image_with_prediction_api(
 )
 async def analyze_image_endpoint(request: ImageAnalysisRequest):
     """
-    Analyze an image from a URL using ArtSensei Prediction API
+    Analyze an image from a URL using OpenAI API
     
     Args:
         request: The image analysis request containing URL, user_id and prompt
